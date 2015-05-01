@@ -15,6 +15,7 @@
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 module Network.Ripple ( Account (..)
+                      , Balance (..)
                       , buildAccount
                       , identURI
                       , getAccount
@@ -24,9 +25,12 @@ module Network.Ripple ( Account (..)
                       , getBalancesFromData
                       ) where
 
+import Data.List
+import Data.Maybe
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Network.HTTP (simpleHTTP, getRequest, getResponseBody)
+import Safe
 import Text.JSON ( JSValue (..)
                  , JSString
                  , JSObject
@@ -40,7 +44,10 @@ data Account = Account { address :: String
                        , identity :: Maybe String
                        } deriving (Eq, Show)
 
-data Balance = Balance deriving (Eq, Show)
+data Balance = Balance { balanceValue :: Rational
+                       , balanceCurrency :: String
+                       , balanceAccount :: Maybe Account
+                       } deriving (Eq, Show)
 
 buildAccount :: String -> Account
 buildAccount addr = Account addr Nothing Nothing
@@ -50,7 +57,7 @@ identURI ident = "https://id.ripple.com/v1/user/" ++ ident
 
 getAccount :: String -> IO (Maybe Account)
 getAccount ident =
-  get (identURI ident) >>= return . getAccountFromData
+  getFromURI (identURI ident) >>= return . getAccountFromData
 
 getAccountFromData :: String -> Maybe Account
 getAccountFromData rawJSON = case JSON.decode rawJSON of
@@ -67,19 +74,45 @@ balancesURI account =
   "https://api.ripple.com/v1/accounts/" ++ address account ++ "/balances"
 
 getBalances :: Account -> IO [Balance]
-getBalances acct = get (balancesURI acct) >>= return . getBalancesFromData
+getBalances acct = getFromURI (balancesURI acct) >>= return . getBalancesFromData
 
 getBalancesFromData :: String -> [Balance]
-getBalancesFromData _ = []
+getBalancesFromData rawJSON = case JSON.decode rawJSON of
+  JSON.Ok (JSObject obj) -> getBalancesFromArray $ getArrayFromObj "balances" obj
+  _                      -> []
 
-get :: String -> IO String
-get uri = simpleHTTP (getRequest uri) >>= getResponseBody
+getBalancesFromArray :: [JSValue] -> [Balance]
+getBalancesFromArray = catMaybes . map jsvalToBalance
+
+jsvalToBalance :: JSValue -> Maybe Balance
+jsvalToBalance (JSObject obj) = do
+  valueString <- getStringFromObj "value" obj
+  value <- stringToRational valueString
+  currency <- getStringFromObj "currency" obj
+  counterparty <- getStringFromObj "counterparty" obj
+  if counterparty == ""
+    then Just $ Balance value currency Nothing
+    else Just $ Balance value currency (Just $ buildAccount counterparty)
+jsvalToBalance _ = Nothing
+
+getFromURI :: String -> IO String
+getFromURI uri = simpleHTTP (getRequest uri) >>= getResponseBody
+
+stringToRational :: String -> Maybe Rational
+stringToRational str =
+  (readMay str :: Maybe Double) >>= Just . toRational
 
 getStringFromObj :: String -> JSObject JSValue -> Maybe String
-getStringFromObj key obj = do
-  val <- (Map.lookup key . Map.fromList . fromJSObject) obj
-  case val of
-    JSString x -> Just $ fromJSString x
-    _          -> Nothing
+getStringFromObj key obj = case getElemFromObj key obj of
+  Just (JSString x) -> Just $ fromJSString x
+  _                 -> Nothing
+
+getArrayFromObj :: String -> JSObject JSValue -> [JSValue]
+getArrayFromObj key obj = case getElemFromObj key obj of
+    Just (JSArray xs) -> xs
+    _                 -> []
+
+getElemFromObj :: String -> JSObject JSValue -> Maybe JSValue
+getElemFromObj key = Map.lookup key . Map.fromList . fromJSObject
 
 -- jl

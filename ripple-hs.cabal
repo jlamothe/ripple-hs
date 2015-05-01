@@ -17,4 +17,4 @@ cabal-version:       >=1.8
 library
   exposed-modules:     Network.Ripple
   -- other-modules:       
-  build-depends:       base >=4.5 && <5, json >=0.9.1 && <1, HTTP >=4000.2.19 && <4001, containers >=0.5.6.3 && <1, HUnit >=1.2.5.2 && <2
+  build-depends:       base >=4.5 && <5, json >=0.9.1 && <1, HTTP >=4000.2.19 && <4001, containers >=0.5.6.3 && <1, safe >=0.3.8 && < 1, HUnit >=1.2.5.2 && <2

@@ -16,6 +16,7 @@
 
 module Main (main) where
 
+import Data.List
 import System.Exit (exitFailure, exitSuccess)
 import Test.HUnit (Counts (..), Test (..), runTestTT, (@=?))
 
@@ -81,11 +82,25 @@ getBalancesFromDataTests = TestLabel "getBalancesFromData" $ TestList
     TestCase $ [] @=? Ripple.getBalancesFromData "[]"
   , TestLabel "no balances" $
     TestCase $ [] @=? emptyBalanceResult
+  , TestLabel "with balances" $
+    TestCase $ balances @=? withBalancesResult
   ]
   where
     emptyBalanceResult = Ripple.getBalancesFromData $
-      balances []
-    balances _ = "{ \"balances\": [] }"
+      balancesData []
+    withBalancesResult = Ripple.getBalancesFromData $ balancesData balances
+    balancesData xs = "{ \"balances\": [" ++ joinBalances xs ++ "] }"
+    joinBalances xs = concat $ intersperse ", " $ map balanceText xs
+    balanceText bal =
+      "{ \"value\": \"" ++ (show . fromRational . Ripple.balanceValue) bal ++ "\", " ++
+      "\"currency\": \"" ++ Ripple.balanceCurrency bal ++ "\", " ++
+      "\"counterparty\": \"" ++ counterpartyText bal ++ "\" }"
+    counterpartyText bal = case Ripple.balanceAccount bal of
+      Nothing   -> ""
+      Just acct -> Ripple.address acct
+    balances = [ Ripple.Balance 100 "XRP" Nothing
+               , Ripple.Balance 25 "CAD" $ Just $ Ripple.buildAccount "foo"
+               ]
 
 accountTests :: String -> Maybe String -> Maybe String -> Maybe Ripple.Account -> Test
 accountTests addr uname ident account = TestList
